@@ -1,0 +1,20 @@
+[
+  {
+    "id": "b.hq",
+    "name": "HQ / Lager",
+    "category": "center",
+    "cost": { "res.wood": 10, "res.stone": 5 },
+    "cycle": 0,
+    "icon": "assets/icons/building_hq.png"
+  },
+  {
+    "id": "b.woodcutter",
+    "name": "Holzfällerhütte",
+    "category": "production",
+    "cost": { "res.wood": 6, "res.stone": 4 },
+    "cycle": 8,
+    "produces": { "res.wood": 1 },
+    "consumes": {},
+    "icon": "assets/icons/building_woodcutter.png"
+  }
+]
