@@ -1,238 +1,131 @@
 /* ============================================================================
- * Datei    : core/registry.js
- * Projekt  : Neue Siedler (Epoche 1 – Basis)
- * Version  : v25.10.19-final +res-values
- * Zweck    : Zentrale Registry (Buildings / Units / Resources / Balance)
- *
- *  (1) Lädt JSON-Daten (buildings, units, balance, resources)
- *  (2) Normalisiert verschiedene Formate (Array, Wrapper, Map-Objekte)
- *  (3) API: list(), get(), balance(), categories(), iconsBase(), snapshot()
- *  (4) Events:
- *      - cb:registry:ready { ok, counts:{buildings, units, resources} }
- *      - req:registry:snapshot  -> cb:registry:snapshot { snapshot }
- *      - req:res:snapshot       -> cb:res:snapshot { resources }    (NEU)
- *  (5) NEU: Registry.resources (Live-Werte) und Spiegel unter data.resources
- * ========================================================================== */
-(function(root, factory){
-  root.Registry = factory();
-})(typeof window !== 'undefined' ? window : this, function(){
+ * Datei   : core/registry.js
+ * Projekt : Neue Siedler (Minimal-Basis)
+ * Version : v25.10.25-min
+ * Zweck   : Zentrale Registry (Single Source of Truth) für IDs/Kategorien/Icons.
+ *           – Lädt minimale Daten (resources.json, buildings.json)
+ *           – Sendet cb:registry:ready, sobald Daten im Speicher sind
+ *           – Liest nur (künftig) aus asset.js, hier: einfacher Fetch (minimal)
+ * Struktur: Imports → Konstanten → Helpers → Klasse → Hauptlogik → Exports
+ * ============================================================================
+ */
 
-  // -------------------------------------------------------------------------
-  // Konstanten & Utils
-  // -------------------------------------------------------------------------
-  const JSON_PATHS = {
-    buildings : 'data/buildings.json',
-    units     : 'data/units.json',
-    balance   : 'data/balance.json',
-    resources : 'data/resources.json',
-  };
+/* ============================= [Imports / Polyfills] ====================== */
+// (keine externen Imports in der Minimal-Variante)
+// Erwartet: core/cblog.polyfill.js & core/eventbus.js sind bereits geladen.
 
-  function emit(name, detail={}) {
-    try { window.dispatchEvent(new CustomEvent(name, { detail })); }
-    catch(e){ (console.warn||(()=>{}))('[registry] emit failed', name, e); }
-  }
+/* ============================ [Konstanten / Meta] ======================== */
+const REGISTRY_VERSION = "v25.10.25-min";
+const REGISTRY_PATHS = {
+  resources: "data/resources.json",
+  buildings: "data/buildings.json",
+};
 
-  const byId = (list, id) => Array.isArray(list) ? (list.find(e => e && e.id === id) || null) : null;
+/* ============================== [Hilfsfunktionen] ======================== */
+const __logOK   = (msg, ...a) => (window.CBLog?.ok    || console.log)(`[registry] ${msg}`, ...a);
+const __logInfo = (msg, ...a) => (window.CBLog?.info  || console.info)(`[registry] ${msg}`, ...a);
+const __logWarn = (msg, ...a) => (window.CBLog?.warn  || console.warn)(`[registry] ${msg}`, ...a);
+const __logErr  = (msg, ...a) => (window.CBLog?.error || console.error)(`[registry] ${msg}`, ...a);
+const __emit    = (name, detail={}) => window.dispatchEvent(new CustomEvent(name, { detail }));
 
-  // -------------------------------------------------------------------------
-  // Normalisierung buildings.json
-  // -------------------------------------------------------------------------
-  function normalizeBuildings(payload){
-    if (Array.isArray(payload)) {
-      return { buildings: payload.slice(), categories: [], iconsBase: '' };
-    }
-    if (payload && typeof payload === 'object') {
-      const buildings  = Array.isArray(payload.buildings)  ? payload.buildings.slice()  : [];
-      const categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
-      const iconsBase  = (typeof payload.iconsBase === 'string') ? payload.iconsBase : '';
-      return { buildings, categories, iconsBase };
-    }
-    return { buildings: [], categories: [], iconsBase: '' };
-  }
+async function __loadJSON(url){
+  const res = await fetch(url, { cache: "no-store" });
+  if(!res.ok) throw new Error(`HTTP ${res.status} @ ${url}`);
+  return res.json();
+}
 
-  // -------------------------------------------------------------------------
-  // Normalisierung resources.json  → Definitionsliste (keine Mengen!)
-  // -------------------------------------------------------------------------
-  function normalizeResources(payload){
-    const out = [];
-    const legacyToModernIcon = (id, icon) => {
-      if (typeof icon === 'string' && /\/res_/.test(icon)) {
-        return `assets/icons/resources/${id}.png`;
+/* ================================= [Klasse] ============================== */
+class RegistryCore {
+  constructor(){
+    /** @type {Record<string, any>} */
+    this.db = {
+      resources: {}, // by id
+      buildings: {}, // by id
+      meta: {
+        version: REGISTRY_VERSION,
+        ready: false,
       }
-      if (!icon) return `assets/icons/resources/${id}.png`;
-      return icon;
     };
-
-    if (payload && !Array.isArray(payload) && typeof payload === 'object') {
-      for (const id of Object.keys(payload)) {
-        const r = payload[id] || {};
-        out.push({
-          id,
-          name  : r.name  || id,
-          icon  : legacyToModernIcon(id, r.icon),
-          epoche: Number(r.epoche || 1),
-          order : Number(r.order ?? 999),
-          type  : 'resource',
-        });
-      }
-    } else if (Array.isArray(payload)) {
-      payload.forEach((r, i) => {
-        if (!r) return;
-        const id = r.id || String(r.name || `res_${i}`).toLowerCase();
-        out.push({
-          id,
-          name  : r.name  || id,
-          icon  : legacyToModernIcon(id, r.icon),
-          epoche: Number(r.epoche || 1),
-          order : Number(r.order ?? (1000 + i)),
-          type  : 'resource',
-        });
-      });
-    }
-
-    out.sort((a,b) => (a.order||999) - (b.order||999));
-    return out;
   }
 
-  // -------------------------------------------------------------------------
-  // Registry
-  // -------------------------------------------------------------------------
-  class RegistryClass {
-    constructor(){
-      this._data = {
-        buildings : [],
-        units     : [],
-        balance   : {},
-        resources : [],     // Definitionsliste (IDs, Icons …)
-      };
-      this._meta = {
-        categories: [],
-        iconsBase : '',
-      };
-      this._ready = false;
+  /**
+   * Initialisiert die Registry, lädt Minimal-Daten und prüft einfache Konsistenz.
+   */
+  async init(){
+    __logInfo(`init() – Version ${REGISTRY_VERSION}`);
+
+    // Minimaldaten laden
+    const [resources, buildings] = await Promise.all([
+      __loadJSON(REGISTRY_PATHS.resources).catch((e)=>{ __logErr("resources.json fehlt", e); return []; }),
+      __loadJSON(REGISTRY_PATHS.buildings).catch((e)=>{ __logErr("buildings.json fehlt", e); return []; }),
+    ]);
+
+    // In Maps eintragen
+    for(const r of resources){
+      if(!r?.id){ __logWarn("Resource ohne id:", r); continue; }
+      if(this.db.resources[r.id]) { __logWarn("Resource doppelt:", r.id); }
+      this.db.resources[r.id] = r;
+    }
+    for(const b of buildings){
+      if(!b?.id){ __logWarn("Building ohne id:", b); continue; }
+      if(this.db.buildings[b.id]) { __logWarn("Building doppelt:", b.id); }
+      this.db.buildings[b.id] = b;
     }
 
-    async init(loadJSON){
-      const _load = typeof loadJSON === 'function'
-        ? loadJSON
-        : async function(url){
-            const bust = (url.includes('?')?'&':'?') + 'v=' + Date.now();
-            const res = await fetch(url + bust, { cache:'no-store' });
-            if (!res.ok) throw new Error('[registry] fetch failed ' + res.status + ' @ ' + url);
-            return await res.json();
-          };
-
-      const [bRaw, unitsRaw, balanceRaw, resRaw] = await Promise.all([
-        _load(JSON_PATHS.buildings).catch(()=>null),
-        _load(JSON_PATHS.units).catch(()=>[]),
-        _load(JSON_PATHS.balance).catch(()=>({})),
-        _load(JSON_PATHS.resources).catch(()=>null),
-      ]);
-
-      // Buildings
-      const B = normalizeBuildings(bRaw || []);
-      this._data.buildings = (B.buildings || []).map(e => ({ ...e, epoche: Number(e?.epoche || 1) }));
-      this._meta.categories = Array.isArray(B.categories) ? B.categories.slice() : [];
-      this._meta.iconsBase  = typeof B.iconsBase === 'string' ? B.iconsBase : '';
-
-      // Units / Balance
-      this._data.units   = Array.isArray(unitsRaw) ? unitsRaw : [];
-      this._data.balance = (balanceRaw && typeof balanceRaw==='object') ? balanceRaw : {};
-
-      // Resources (Definitionsliste)
-      this._data.resources = normalizeResources(resRaw || {});
-
-      this._ready = true;
-      emit('cb:registry:ready', { ok:true, counts:{
-        buildings : this._data.buildings.length,
-        units     : this._data.units.length,
-        resources : this._data.resources.length,
-      }});
-    }
-
-    isReady(){ return !!this._ready; }
-
-    // --- API ---------------------------------------------------------------
-    list(kind, { epoche=null, category=null } = {}){
-      let src;
-      switch (kind) {
-        case 'units'     : src = this._data.units; break;
-        case 'resources' : src = this._data.resources; break;
-        case 'buildings' :
-        default          : src = this._data.buildings; break;
+    // Einfache Cross-Checks (Minimal)
+    for(const [bid, b] of Object.entries(this.db.buildings)){
+      if(b.cost){
+        for(const [rid] of Object.entries(b.cost)){
+          if(!this.db.resources[rid]){
+            __logWarn(`Building ${bid} referenziert unbekannte Ressource: ${rid}`);
+          }
+        }
       }
-      if (!Array.isArray(src)) return [];
-      let out = src.slice();
-
-      if (epoche != null)   out = out.filter(e => Number(e?.epoche || 1) === Number(epoche));
-      if (category != null && kind === 'buildings')
-                            out = out.filter(e => (e?.category || '') === category);
-
-      return out;
     }
 
-    get(kind, id){
-      let src;
-      switch (kind) {
-        case 'units'     : src = this._data.units; break;
-        case 'resources' : src = this._data.resources; break;
-        case 'buildings' :
-        default          : src = this._data.buildings; break;
-      }
-      return byId(src, id);
-    }
-
-    balance(){    return this._data.balance; }
-    categories(){ return this._meta.categories.slice(); }
-    iconsBase(){  return this._meta.iconsBase || ''; }
-
-    snapshot(){
-      return {
-        data: JSON.parse(JSON.stringify(this._data)),
-        meta: JSON.parse(JSON.stringify(this._meta)),
-      };
-    }
+    this.db.meta.ready = true;
+    __logOK("bereit ✓");
+    __emit("cb:registry:ready", { version: REGISTRY_VERSION, counts: {
+      resources: Object.keys(this.db.resources).length,
+      buildings: Object.keys(this.db.buildings).length
+    }});
   }
 
-  // Singleton
-  const REG = new RegistryClass();
+  /** Liefert ein Objekt einer Kategorie (z. B. "resources"|"buildings") nach ID. */
+  get(type, id){ return this.db?.[type]?.[id] ?? null; }
 
-  // Snapshot-Request → Response
-  window.addEventListener('req:registry:snapshot', ()=>{
-    emit('cb:registry:snapshot', { snapshot: REG.snapshot() });
-  });
+  /** Listet alle Einträge einer Kategorie. */
+  list(type){ return Object.values(this.db?.[type] ?? {}); }
+}
 
-  // -------------------------------------------------------------
-  // NEU: Live-Resource-Werte (für Inspector & Game)
-  //  - nach registry:ready einmalig initialisieren
-  //  - unter Registry.resources und Registry.data.resources verfügbar
-  //  - Snapshot-Request/Response für Inspector
-  // -------------------------------------------------------------
-  (function setupResourceValues(){
-    const RES_VALUES = (window.RegistryValues = window.RegistryValues || {}); // globaler, langlebiger Speicher
+/* ================================ [Hauptlogik] =========================== */
+(function main(){
+  const reg = new RegistryCore();
+  // Exponieren:
+  window.Registry = reg;
 
-    window.addEventListener('cb:registry:ready', ()=>{
-      try{
-        const ids = REG.list('resources').map(r=>r.id);
-        // sanft initialisieren (nur fehlende Ressourcen auf 0 setzen)
-        ids.forEach(id => { if (RES_VALUES[id] == null) RES_VALUES[id] = 0; });
+  // Standard-Flow: nach Assets ready, oder spätestens nach Window-Load
+  let started = false;
+  function kickoff(){
+    if(started) return;
+    started = true;
+    reg.init().catch(err => __logErr("init() failed", err));
+  }
 
-        // unter Registry spiegeln (so sucht der Inspector zuerst)
-        const R = (window.Registry = window.Registry || {});
-        R.resources = RES_VALUES;
-        R.data = R.data || {};
-        R.data.resources = RES_VALUES;
-      }catch(_){}
-    });
+  // Falls deine asset.js cb:assets-ready feuert → danach initialisieren
+  window.addEventListener("cb:assets-ready", () => kickoff(), { once: true });
 
-    // Inspector-Snapshot anfragen/liefern
-    window.addEventListener('req:res:snapshot', ()=>{
-      emit('cb:res:snapshot', { resources: RES_VALUES });
-    });
-  })();
+  // Fallback: spätestens nach DOM/Window Start
+  if (document.readyState === "complete") {
+    setTimeout(kickoff, 100);
+  } else {
+    window.addEventListener("load", () => setTimeout(kickoff, 100), { once: true });
+  }
+})();
 
-  // Sofort-Init (lädt JSONs & feuert cb:registry:ready)
-  REG.init(); // <— identisch zu deiner Version
-
-  return REG;
-});
+/* ================================= [Exports] ============================= */
+// (keine ES-Module-Exports; globale window.Registry API:
+//   - Registry.get(type, id)
+//   - Registry.list(type)
+//   - Event: cb:registry:ready
+// )
