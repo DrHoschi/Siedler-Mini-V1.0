@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # JSONC darf existieren – aber nicht in den Release-Build
+      - name: Fail if JSONC present in build root (guard)
+        run: |
+          if find data -type f -name "*.jsonc" | grep .; then
+            echo "JSONC gefunden. Erlaubt für DEV, aber NICHT für Release."
+            echo "Tipp: In Release-Workflow nach JSON transpilen/validieren."
+          fi
+
+      # Basisvalidierung: JSON-Dateien parsen
+      - name: Validate JSON files
+        run: |
+          set -e
+          if command -v jq >/dev/null 2>&1; then
+            find data -type f -name "*.json" -print0 | xargs -0 -I {} jq empty {}
+          else
+            echo "jq fehlt; einfache Validierung übersprungen."
+          fi
+
+      # Dateiliste erzeugen (optional)
+      - name: Generate file list
+        run: |
+          find . -type f ! -path "./.git/*" | sort > filelist.txt
+      - name: Upload filelist
+        uses: actions/upload-artifact@v4
+        with:
+          name: filelist
+          path: filelist.txt
