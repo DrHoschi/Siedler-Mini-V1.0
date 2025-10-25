@@ -11,7 +11,7 @@ Das neue Siedler minimale Version
           ├─ core/                       (deinen Core-Ordner hier reinkopieren)
           ├─ data/                       (deine JSON-Daten)
           ├─ docs/                       (nur Doku, KEINE HTML-Demos für Build)
-         b├─ tools/                      (dev-tools, nicht für Build)
+          ├─ tools/                      (dev-tools, nicht für Build)
           ├─ .editorconfig
           ├─ .gitattributes
           ├─ .gitignore
