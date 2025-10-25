@@ -1,7 +1,8 @@
-Welche core/-Dateien JETZT wirklich nötig sind (Start + Canvas + Events):
+ Welche core/-Dateien JETZT wirklich     nötig sind (Start + Canvas + Events):
 
-Bitte nur diese erstmal hochladen (der Rest kann später nachrücken):
-	•	core/cblog.polyfill.js
+ Bitte nur diese erstmal hochladen (der  Rest kann später nachrücken):
+
+  •	core/cblog.polyfill.js
 	•	core/eventbus.js
 	•	core/core.env.js
 	•	core/asset.js
@@ -20,5 +21,6 @@ Bitte nur diese erstmal hochladen (der Rest kann später nachrücken):
 	•	core/path-overlay.js
 	•	core/unit-overlay.js
 
-Warum genau diese?
-Damit lädt dein Canvas, das Startpanel reagiert, Events fließen, und wir haben schon Map/Render/Inputs „unter Strom“. Alles andere (HUD, BuildDock usw.) kommt stückweise dazu – ohne die Index umzubauen.
+ Warum genau diese?
+ 
+ Damit lädt dein Canvas, das Startpanel reagiert, Events fließen, und wir haben schon Map/Render/Inputs „unter Strom“. Alles andere (HUD, BuildDock usw.) kommt stückweise dazu – ohne die Index umzubauen.
