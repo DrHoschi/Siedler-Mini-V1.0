@@ -1,0 +1,5 @@
+[
+  { "id": "res.wood",  "name": "Holz",  "icon": "assets/icons/wood.png",  "color": "#8b5a2b" },
+  { "id": "res.stone", "name": "Stein", "icon": "assets/icons/stone.png", "color": "#9aa0a6" },
+  { "id": "res.fish",  "name": "Fisch", "icon": "assets/icons/fish.png",  "color": "#60a5fa" }
+]
