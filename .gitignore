@@ -1,0 +1,12 @@
+# System
+.DS_Store
+Thumbs.db
+
+# Node/Tooling (falls später genutzt)
+node_modules/
+dist/
+.cache/
+
+# Logs & temp
+*.log
+tmp/
