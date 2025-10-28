@@ -1,0 +1,50 @@
+/* ============================================================================
+ * [00] META
+ * Datei    : ui/css/ui-build.css
+ * Projekt  : Neue Siedler (Siedler‑Mini)
+ * Version  : v19.2.0 (2025-10-10)
+ * Zweck    : Baumenü/Dock (Tabs, Scroller, Karten) + Kosten‑Icons
+ * Struktur :
+ *   [10] Dock‑Layout
+ *   [20] Tabs
+ *   [30] Grid/Karten
+ *   [40] Kostenleiste
+ *   [50] Responsiv
+ * Hinweise :
+ *   – Nur Build‑spezifische Styles hier (kein HUD/Inspector).
+ *   – „Holzrahmen“: per background‑image austauschbar.
+ * ============================================================================
+ */
+.build-dock{
+  position:fixed; left:16px; bottom:16px; width:var(--dock-w);
+  display:flex; flex-direction:column; gap:var(--gap);
+  z-index:var(--z-build, 55);
+}
+/* [20] Tabs */
+.build-tabs{ display:flex; gap:8px; overflow:auto; padding-bottom:4px; scrollbar-width:thin; }
+.build-tabs .tab{ white-space:nowrap; }
+.build-tabs .tab.is-active{ outline:2px solid var(--accent); border-radius:8px; }
+
+/* [30] Grid + Karten */
+.build-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+.build-card{
+  background:var(--panel); border-radius:12px; box-shadow:var(--shadow);
+  padding:10px; position:relative;
+  /* Optional: Holzrahmen */
+  /* background-image:url("../../assets/ui/build/frame_wood.png"); background-size:cover; */
+}
+.build-card__img{ aspect-ratio:1/1; width:100%; object-fit:cover; image-rendering:pixelated; border-radius:8px; }
+.build-card__title{ font-weight:700; margin-top:8px; text-shadow:0 1px 0 #0009; }
+
+/* [40] Kostenleiste */
+.costs{ position:absolute; right:8px; bottom:8px; display:flex; gap:6px; }
+.cost{
+  display:inline-flex; align-items:center; gap:4px;
+  padding:2px 6px; border-radius:999px; background:#0006; color:#fff; font-weight:700;
+}
+.cost img{ width:18px; height:18px; image-rendering:pixelated; }
+
+/* [50] Responsiv */
+@media (max-width:1200px){ .build-grid{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:900px){  .build-grid{ grid-template-columns:1fr; } }
+@media (max-width:768px){  .build-dock{ width:min(92vw, var(--dock-w)); left:4vw; bottom:12px; } }
